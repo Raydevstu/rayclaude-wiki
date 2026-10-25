@@ -38,6 +38,8 @@ def _today() -> str:
 
 
 class Store:
+    backend = "sqlite"
+
     def __init__(self, path: str):
         if path != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)

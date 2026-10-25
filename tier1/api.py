@@ -204,8 +204,10 @@ def create_app(svc: services.Services | None = None) -> FastAPI:
 
     @app.get("/health")
     def health():
+        durable = svc.store.backend == "postgres"
         return {"status": "ok", "provider": s.provider, "auth": "enabled" if s.api_token else "disabled",
-                "skills": len(svc.skills.skills)}
+                "skills": len(svc.skills.skills), "persistence": svc.store.backend,
+                "durable": durable, "warning": None if durable else "SQLite storage is ephemeral"}
 
     @app.post("/v1/guard/agent/prepare", dependencies=[Depends(auth)])
     async def guard_agent_prepare(req: GuardAgentReq):

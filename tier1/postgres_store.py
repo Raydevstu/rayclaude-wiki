@@ -25,6 +25,8 @@ _UPSERT_KEYS = {
 class PostgresStore(Store):
     """Same store contract as SQLite, backed by a Render-managed PostgreSQL database."""
 
+    backend = "postgres"
+
     def __init__(self, database_url: str):
         if not database_url.startswith(("postgres://", "postgresql://")):
             raise ValueError("TIER1_DATABASE_URL must be a PostgreSQL connection URL")

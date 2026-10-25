@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tier1
+      POSTGRES_USER: tier1
+      POSTGRES_PASSWORD: tier1-local-only
+    ports:
+      - "5432:5432"
+    volumes:
+      - tier1-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tier1 -d tier1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  tier1-postgres-data:

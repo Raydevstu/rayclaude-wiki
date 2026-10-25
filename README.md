@@ -88,3 +88,16 @@ database credentials belong in Git.
 Free Render staging remains SQLite-backed and ephemeral. Use the Blueprint only
 when durable production persistence is intended, then set the provider and
 other production secrets in the Render Dashboard.
+
+## Local PostgreSQL with Docker
+
+Start a durable local database with:
+
+```powershell
+docker compose -f docker-compose.local.yml up -d
+```
+
+Then set `TIER1_DATABASE_URL` to
+`postgresql://tier1:tier1-local-only@127.0.0.1:5432/tier1` before starting the
+app. Stop the database with `docker compose -f docker-compose.local.yml down`;
+the named volume preserves local data until it is explicitly removed.
