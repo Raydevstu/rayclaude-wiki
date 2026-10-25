@@ -12,6 +12,7 @@ The current foundation, LAB trust boundary, and asynchronous sandbox job slice a
 - Sandbox provisioning is asynchronous (`202` + job id), reports phase progress, supports cooperative cancellation, and never publishes a partial sandbox.
 - Sandbox cleanup is asynchronous with observable `FAILED`, `REMOVED`, and expired-sweep job states; managed Git commands disable inherited user hooks.
 - Sandbox job snapshots persist in the existing SQLite store; manager restart reloads terminal jobs and marks in-flight jobs interrupted, while expiry cleanup derives truth from sandbox manifests.
+- Persisted sandbox job history is bounded to the newest 500 jobs, and concurrent cleanup requests claim a sandbox before removal so the same sandbox cannot be removed twice.
 - Mission Control polls sandbox jobs and exposes cancellation while preserving the approval and rollback boundary.
 - Writes remain disabled by default.
 - Focused sandbox/approval/API verification: 21 passed.
@@ -22,11 +23,11 @@ The current foundation, LAB trust boundary, and asynchronous sandbox job slice a
 
 ## Exact next implementation boundary
 
-The next boundary is operational hardening of persisted job retention and concurrent cleanup scheduling. Preserve the existing approval, evidence, repository-identity, sandbox, and rollback gates. Do not enable production writes or claim live-agent integration.
+The next boundary is production persistence and operational deployment hardening. Preserve the existing approval, evidence, repository-identity, sandbox, and rollback gates. Do not enable production writes or claim live-agent integration.
 
 ## Current risks and gaps
 
-- The worktree is intentionally dirty and uncommitted; preserve all existing changes.
+- The worktree is clean on `codex/rayclaude-wiki` after the operational hardening slice.
 - Browser evidence uses the Codex in-app browser fallback; the `bsk` daemon was blocked by host socket policy.
 - Production deployment, real provider-agent execution, automatic rollback execution, and large-repository provisioning remain unverified.
 - The Windows subprocess provider issue requires host repair or a different test host; it is not fixed in application code.
@@ -37,4 +38,4 @@ This file is the compact continuation capsule for a new chat. Use it together wi
 
 ## New-chat first action
 
-Read this handoff, inspect the dirty worktree, then harden persisted job retention and concurrent cleanup scheduling before expanding scope.
+Read this handoff, verify the Render staging URL and environment, then plan production persistence and deployment hardening before expanding scope.

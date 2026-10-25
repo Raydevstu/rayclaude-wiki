@@ -201,6 +201,11 @@ class Store:
         rows = self.q("SELECT body FROM sandbox_jobs ORDER BY ts")
         return [json.loads(row["body"]) for row in rows]
 
+    def sandbox_jobs_prune(self, keep: int = 500):
+        keep = max(1, int(keep))
+        self.x("DELETE FROM sandbox_jobs WHERE id NOT IN "
+               "(SELECT id FROM sandbox_jobs ORDER BY ts DESC, id DESC LIMIT ?)", (keep,))
+
     # ---- jobs
     def job_put(self, name, kind, spec, prompt, enabled=True):
         self.x("INSERT OR REPLACE INTO jobs(name,kind,spec,prompt,enabled) VALUES(?,?,?,?,?)",

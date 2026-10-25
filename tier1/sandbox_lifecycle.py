@@ -162,11 +162,14 @@ class SandboxLifecycle:
 class SandboxJobManager:
     """Process-local async job state; only completed jobs publish a sandbox."""
 
-    def __init__(self, lifecycle: SandboxLifecycle, store=None):
+    def __init__(self, lifecycle: SandboxLifecycle, store=None, max_retained_jobs: int = 500):
         self.lifecycle = lifecycle
         self.store = store
+        self.max_retained_jobs = max(1, int(max_retained_jobs))
         self._jobs: dict[str, dict] = {}
         self._cancel: dict[str, threading.Event] = {}
+        self._cleanup_claims: set[str] = set()
+        self._cleanup_scan_lock = threading.Lock()
         self._lock = threading.RLock()
         if store:
             for job in store.sandbox_jobs_list():
@@ -176,6 +179,7 @@ class SandboxJobManager:
                 self._jobs[job["job_id"]] = job
                 self._cancel[job["job_id"]] = threading.Event()
                 self._save(job["job_id"])
+            store.sandbox_jobs_prune(self.max_retained_jobs)
 
     def provision(self, source: str | Path, ttl_seconds: int) -> dict:
         return self._start("provision", self._run_provision, str(source), ttl_seconds)
@@ -221,6 +225,7 @@ class SandboxJobManager:
         if self.store:
             job = self._jobs[job_id]
             self.store.sandbox_job_put(job_id, job["status"], job)
+            self.store.sandbox_jobs_prune(self.max_retained_jobs)
 
     def _run_provision(self, job_id: str, source: str, ttl_seconds: int) -> None:
         cancel = self._cancel[job_id]
@@ -239,6 +244,12 @@ class SandboxJobManager:
                          expires_at=record.expires_at, source=record.source)
 
     def _run_cleanup(self, job_id: str, sandbox_id: str, force: bool) -> None:
+        with self._lock:
+            if sandbox_id in self._cleanup_claims:
+                self._update(job_id, status="FAILED", message="cleanup already in progress",
+                             reason="cleanup already in progress")
+                return
+            self._cleanup_claims.add(sandbox_id)
         self._update(job_id, status="CLEANING", progress=10, message="removing sandbox")
         try:
             self.lifecycle.cleanup(sandbox_id, force=force)
@@ -246,8 +257,15 @@ class SandboxJobManager:
             self._update(job_id, status="FAILED", message=str(exc), reason=str(exc))
         else:
             self._update(job_id, status="REMOVED", progress=100, message="removed", sandbox_id=sandbox_id)
+        finally:
+            with self._lock:
+                self._cleanup_claims.discard(sandbox_id)
 
     def _run_cleanup_expired(self, job_id: str) -> None:
+        with self._cleanup_scan_lock:
+            self._run_cleanup_expired_locked(job_id)
+
+    def _run_cleanup_expired_locked(self, job_id: str) -> None:
         self._update(job_id, status="CLEANING", progress=10, message="scanning expired sandboxes")
         try:
             removed = self.lifecycle.cleanup_expired()
