@@ -7,11 +7,12 @@ from quickwin_cli import main
 from repository_adapter import inspect_repository
 
 
-def test_repository_adapter_reports_non_git_workspace():
+def test_repository_adapter_reports_git_identity():
     identity = inspect_repository(Path(__file__).resolve().parents[1])
     assert identity.root.endswith("Rayclaude-wiki")
-    assert identity.is_git is False
-    assert identity.branch == "unavailable"
+    assert identity.is_git is True
+    assert identity.branch == "main"
+    assert identity.commit != "unavailable"
 
 
 def test_config_loader_accepts_scoped_thresholds(tmp_path):
