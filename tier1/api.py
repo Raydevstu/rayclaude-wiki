@@ -585,7 +585,7 @@ def create_app(svc: services.Services | None = None) -> FastAPI:
             raise HTTPException(404, "approval record not found")
         return record
 
-    @app.get("/", include_in_schema=False)
+    @app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
     def ui():
         return FileResponse(Path(__file__).parent / "static" / "index.html")
 
