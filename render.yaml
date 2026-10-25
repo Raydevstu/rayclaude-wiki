@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: rayclaude-wiki
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: TIER1_ENV
+        value: production
+      - key: TIER1_PROVIDER
+        value: mock
+      - key: TIER1_GUARD_WRITES
+        value: "0"
+      - key: TIER1_DATABASE_URL
+        fromDatabase:
+          name: rayclaude-wiki-db
+          property: connectionString
+      - key: TIER1_API_TOKEN
+        generateValue: true
+
+databases:
+  - name: rayclaude-wiki-db
+    databaseName: rayclaude_wiki
+    user: rayclaude
+    region: oregon
+    plan: basic-256mb

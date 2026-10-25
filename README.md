@@ -78,3 +78,13 @@ cost per verified answer. With the mock provider the numbers are synthetic; use 
 Not implemented: git-worktree isolated coding agents (Orca-style), semantic/embedding search (retrieval is BM25), OCR and Office-format parsing, Notion write-back, live two-way Obsidian sync (notes are written once; edits are picked up by the vault auto-sync). Slack/notification paths are tested against mock transports, not a live workspace.
 Research needs URLs in the prompt (no search backend is bundled). Memory ranking is lexical, not embeddings. SQLite is single-node.
 DNS-rebinding between the SSRF check and the fetch is not fully closed; use an egress proxy or `TIER1_HTTP_ALLOWLIST` in production.
+# Render production persistence
+
+`render.yaml` defines the production web service and a Render Managed PostgreSQL
+database. Applying that Blueprint creates a billable database resource. The
+service receives its internal connection string as `TIER1_DATABASE_URL`; no
+database credentials belong in Git.
+
+Free Render staging remains SQLite-backed and ephemeral. Use the Blueprint only
+when durable production persistence is intended, then set the provider and
+other production secrets in the Render Dashboard.

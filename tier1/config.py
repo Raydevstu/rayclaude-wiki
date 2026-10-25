@@ -29,6 +29,7 @@ class Settings:
     models: dict = field(default_factory=dict)
     prices: dict = field(default_factory=dict)   # tier -> (usd per 1M input, usd per 1M output)
     db_path: str = "data/tier1.db"
+    database_url: str = ""
     skills_dir: str = "skills"
     sandbox_dir: str = "sandbox"
     api_token: str = ""
@@ -68,6 +69,7 @@ def load() -> Settings:
         api_key=os.getenv("TIER1_PROVIDER_API_KEY", os.getenv("ANTHROPIC_API_KEY", "")),
         base_url=os.getenv("TIER1_PROVIDER_BASE_URL", ""), models=models, prices=prices,
         db_path=os.getenv("TIER1_DB", str(Path(os.getenv("TIER1_HOME", ".")) / "data" / "tier1.db")),
+        database_url=os.getenv("TIER1_DATABASE_URL", ""),
         skills_dir=os.getenv("TIER1_SKILLS_DIR", "skills"),
         sandbox_dir=os.getenv("TIER1_SANDBOX_DIR", "sandbox"),
         api_token=os.getenv("TIER1_API_TOKEN", ""), webhook_secret=os.getenv("TIER1_WEBHOOK_SECRET", ""),

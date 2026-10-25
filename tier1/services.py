@@ -10,7 +10,7 @@ from .notify import Notifier
 from .orchestrator import Orchestrator
 from .scheduler import Scheduler
 from .skills import SkillRegistry
-from .store import Store
+from .store import Store, build_store
 from .tasks import Tasks
 from .chat import Chat
 from .tools import Tools
@@ -34,7 +34,7 @@ class Services:
 
 def build(settings=None, provider=None, tools_transport=None, notify_transport=None, slack_transport=None) -> Services:
     s = settings or config.load()
-    store = Store(s.db_path)
+    store = build_store(s.database_url, s.db_path)
     gw = Gateway(s, store, provider)
     skills = SkillRegistry(s.skills_dir)
     kb = Knowledge(store, s)

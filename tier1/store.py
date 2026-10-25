@@ -24,6 +24,15 @@ CREATE TABLE IF NOT EXISTS sandbox_jobs(id TEXT PRIMARY KEY, ts REAL, status TEX
 GENESIS = "0" * 64
 
 
+def build_store(database_url: str, sqlite_path: str) -> "Store":
+    if database_url:
+        if not database_url.startswith(("postgres://", "postgresql://")):
+            raise ValueError("TIER1_DATABASE_URL must be a PostgreSQL connection URL")
+        from .postgres_store import PostgresStore
+        return PostgresStore(database_url)
+    return Store(sqlite_path)
+
+
 def _today() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
