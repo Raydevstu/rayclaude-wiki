@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tier1-agent"
+version = "1.0.0"
+description = "Tier-1 agent engine: prompt compiler, skill injection, worker mesh, audit, ledger, MCP, scheduler"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pypdf>=4"]
+pdf = ["pypdf>=4"]
+
+[project.scripts]
+tier1 = "tier1.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["tier1*"]
+
+[tool.setuptools.package-data]
+tier1 = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

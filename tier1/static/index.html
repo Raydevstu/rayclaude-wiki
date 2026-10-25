@@ -1,0 +1,64 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tier-1 Control Plane</title>
+<style>
+:root{--bg:#f6f7f9;--sf:#fff;--tx:#14181f;--mu:#5d6675;--ac:#2f5bea;--bd:#dde1e8;--ok:#13804a;--er:#b3261e}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1116;--sf:#171b22;--tx:#e8ebf0;--mu:#97a1b1;--ac:#7c9bff;--bd:#2a313c;--ok:#4cc388;--er:#ff8a80}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 system-ui,sans-serif}
+header,main{max-width:1100px;margin:0 auto;padding:14px 18px}header{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+h1{font-size:17px;margin:0;flex:1}nav{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px}
+button,input,textarea,select{font:inherit;color:var(--tx);background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:7px 12px}
+button{cursor:pointer}button.on,button.p{background:var(--ac);color:#fff;border-color:var(--ac)}
+textarea{width:100%;min-height:90px}.card{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px}
+pre{white-space:pre-wrap;word-break:break-word;margin:0;font:12.5px/1.5 ui-monospace,monospace}
+table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:6px 8px;border-top:1px solid var(--bd);vertical-align:top}
+.m{color:var(--mu)}.ok{color:var(--ok)}.er{color:var(--er)}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.k{display:inline-block;margin-right:18px}.k b{display:block;font-size:20px}
+</style></head><body>
+<header><h1>Tier-1 Control Plane</h1><input id="tk" type="password" placeholder="API token (if enabled)" style="width:220px"><span id="hl" class="m"></span></header>
+<main><nav id="nv"></nav><div id="v"></div></main>
+<script>
+const $=s=>document.querySelector(s),E=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let tab='run';$('#tk').value=sessionStorage.getItem('t')||'';
+const api=async(p,o={})=>{sessionStorage.setItem('t',$('#tk').value);const r=await fetch(p,{...o,headers:{'Content-Type':'application/json',Authorization:'Bearer '+$('#tk').value}});
+ const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(typeof j.detail==='string'?j.detail:JSON.stringify(j.detail||r.status));return j};
+const T=[['run','Run'],['runs','Runs'],['usage','Usage'],['skills','Skills'],['jobs','Jobs'],['kb','Notebooks'],['chat','Chat'],['ledger','Ledger']];
+const nav=()=>{$('#nv').innerHTML=T.map(t=>`<button class="${tab==t[0]?'on':''}" data-t="${t[0]}">${t[1]}</button>`).join('');
+ $('#nv').querySelectorAll('button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;show()})};
+const usd=n=>'$'+Number(n||0).toFixed(5);
+async function show(){nav();const v=$('#v');v.innerHTML='<div class="m">Loading…</div>';
+ try{
+ if(tab=='run'){v.innerHTML=`<div class="card"><textarea id="p" placeholder="Prompt. Include URLs to research them, or 'file:notes.txt' to read from the sandbox."></textarea>
+  <div class="row"><select id="t"><option value="">auto tier</option><option>small</option><option>medium</option><option>large</option></select><select id="m"><option value="">autopilot</option><option>ralph</option><option>team</option><option>plan</option></select><button class="p" id="go">Run</button><span id="st" class="m"></span></div></div><div id="o"></div>`;
+  $('#go').onclick=async()=>{$('#st').textContent='running…';$('#go').disabled=true;try{const r=await api('/v1/run',{method:'POST',body:JSON.stringify({prompt:$('#p').value,tier:$('#t').value||null,mode:$('#m').value||null})});
+   $('#o').innerHTML=`<div class="card"><div><span class="k"><b class="${r.status=='ok'?'ok':'er'}">${r.status}</b>status</span><span class="k"><b>${r.audit?.score??'–'}</b>audit</span><span class="k"><b>${usd(r.usage.cost_usd)}</b>cost</span>
+   <span class="k"><b>${r.savings?.saved_pct??'–'}%</b>saved vs baseline</span><span class="k"><b>${r.usage.calls}</b>model calls</span>${r.cached?'<span class="k"><b>cache</b>hit</span>':''}${r.provider=='mock'?'<span class="k er"><b>mock</b>provider</span>':''}</div></div>
+   <div class="card"><pre>${E(r.answer)}</pre></div><div class="card"><div class="m">Mode: ${E(r.mode||'autopilot')}${r.iterations?' ('+r.iterations+' iterations, '+(r.verified?'verified':'NOT verified')+')':''} · Skills: ${E((r.skills||[]).join(', ')||'none')} · run ${E(r.run_id)}</div>
+   ${r.subtasks?'<table>'+r.subtasks.map(s=>`<tr><td>${E(s.prompt.slice(0,90))}</td><td class="${s.status=='ok'?'ok':'er'}">${s.status}</td><td class="m">${E(s.run_id||'')}</td></tr>`).join('')+'</table>':''}
+   <table>${(r.workers||[]).map(w=>`<tr><td>${E(w.name)}</td><td class="${w.ok?'ok':'er'}">${w.ok?'ok':'failed'}</td><td>${E(w.summary)} ${E(w.error)}</td><td class="m">${w.raw_tokens}→${w.kept_tokens} tok</td></tr>`).join('')}</table></div>`;$('#st').textContent=''}catch(e){$('#st').textContent=e.message}$('#go').disabled=false}}
+ if(tab=='runs'){const r=await api('/v1/runs');v.innerHTML=`<div class="card"><table><tr><th>Run</th><th>Status</th><th>Trigger</th><th>Prompt</th><th>Cost</th></tr>${r.map(x=>`<tr><td><a href="#" data-r="${x.id}">${x.id}</a></td><td class="${x.status=='ok'?'ok':x.status=='failed'?'er':''}">${x.status}</td><td>${E(x.trigger)}</td><td>${E(x.prompt)}</td><td>${usd(x.actual_cost)}</td></tr>`).join('')}</table></div><div id="cp"></div>`;
+  v.querySelectorAll('[data-r]').forEach(a=>a.onclick=async e=>{e.preventDefault();const c=await api('/v1/runs/'+a.dataset.r+'/capsule').catch(x=>({error:x.message}));$('#cp').innerHTML=`<div class="card"><div class="m">Task capsule</div><pre>${E(JSON.stringify(c,null,2))}</pre></div>`})}
+ if(tab=='usage'){const u=await api('/v1/usage');v.innerHTML=`<div class="card"><span class="k"><b>${usd(u.spend_today_usd)}</b>spend today</span><span class="k"><b>${u.saved_pct??'–'}%</b>measured saving (${u.measured_runs} runs)</span><span class="k"><b>${usd(u.baseline_cost_usd)}</b>baseline</span><span class="k"><b>${usd(u.actual_cost_usd)}</b>actual</span></div>
+  <div class="card"><table><tr><th>Tier</th><th>Calls</th><th>In</th><th>Out</th><th>Cost</th></tr>${u.by_tier.map(t=>`<tr><td>${t.tier}</td><td>${t.calls}</td><td>${t.in_tok}</td><td>${t.out_tok}</td><td>${usd(t.cost)}</td></tr>`).join('')}</table></div>
+  <div class="card"><table><tr><th>Task</th><th>Calls</th><th>Cost</th></tr>${u.by_task.map(t=>`<tr><td>${t.task}</td><td>${t.calls}</td><td>${usd(t.cost)}</td></tr>`).join('')}</table></div>`}
+ if(tab=='skills'){const s=await api('/v1/skills');v.innerHTML=`<div class="card"><table><tr><th>Skill</th><th>Description</th><th>Triggers</th></tr>${s.skills.map(k=>`<tr><td>${E(k.name)}</td><td>${E(k.description)}</td><td class="m">${E(k.triggers.join(', '))}</td></tr>`).join('')}</table>${Object.keys(s.errors).length?'<pre class="er">'+E(JSON.stringify(s.errors))+'</pre>':''}</div>`}
+ if(tab=='jobs'){const j=await api('/v1/jobs');v.innerHTML=`<div class="card"><table><tr><th>Name</th><th>Kind</th><th>Spec</th><th>Last</th><th></th></tr>${j.map(x=>`<tr><td>${E(x.name)}</td><td>${x.kind}</td><td>${E(x.spec||'POST /v1/webhooks/'+x.name)}</td><td class="m">${E(x.last_status||'')}</td><td><button data-f="${x.name}">Fire</button> <button data-d="${x.name}">Delete</button></td></tr>`).join('')}</table></div>
+  <div class="card"><div class="row"><input id="jn" placeholder="name"><select id="jk"><option>cron</option><option>webhook</option></select><input id="js" placeholder="*/10 * * * *"><input id="jp" placeholder="prompt ({input} = webhook body)" style="flex:1;min-width:200px"><button class="p" id="ja">Add</button><span id="je" class="er"></span></div></div>`;
+  $('#ja').onclick=async()=>{try{await api('/v1/jobs',{method:'POST',body:JSON.stringify({name:$('#jn').value,kind:$('#jk').value,spec:$('#js').value,prompt:$('#jp').value})});show()}catch(e){$('#je').textContent=e.message}};
+  v.querySelectorAll('[data-d]').forEach(b=>b.onclick=async()=>{await api('/v1/jobs/'+b.dataset.d,{method:'DELETE'});show()});
+  v.querySelectorAll('[data-f]').forEach(b=>b.onclick=async()=>{b.textContent='…';try{await api('/v1/jobs/'+b.dataset.f+'/fire',{method:'POST'})}catch(e){alert(e.message)}show()})}
+ if(tab=='kb'){const nbs=await api('/v1/kb');v.innerHTML=`<div class="card"><div class="m">Notebooks: ${nbs.map(n=>E(n.notebook)+' ('+n.sources+')').join(', ')||'none yet'}</div><div class="row"><input id="kn" placeholder="notebook" value="default" style="width:130px"><input id="ks" placeholder="source name" style="width:170px"></div><textarea id="kt" placeholder="Paste source text to index…"></textarea><div class="row"><button id="ki">Index</button><input id="kq" placeholder="Ask a question about this notebook" style="flex:1;min-width:220px"><button class="p" id="ka">Ask</button><select id="kk"><option>briefing</option><option>faq</option><option>study_guide</option><option>timeline</option></select><button id="kg">Generate</button><span id="ke" class="m"></span></div></div><div id="ko"></div>`;
+  const nb=()=>encodeURIComponent($('#kn').value.trim().toLowerCase()||'default');
+  $('#ki').onclick=async()=>{try{const r=await api('/v1/kb/'+nb()+'/sources',{method:'POST',body:JSON.stringify({name:$('#ks').value,text:$('#kt').value})});$('#ke').textContent=r.status+' ('+r.chunks+' chunks)'}catch(e){$('#ke').textContent=e.message}};
+  $('#kg').onclick=async()=>{$('#ke').textContent='generating…';try{const r=await api('/v1/kb/'+nb()+'/studio',{method:'POST',body:JSON.stringify({kind:$('#kk').value,focus:$('#kq').value})});$('#ke').textContent='';
+   $('#ko').innerHTML=`<div class="card"><b class="${r.grounded?'ok':'er'}">${r.grounded?'Grounded in sources':'Not grounded'}</b><pre>${E(r.answer)}</pre></div>`}catch(e){$('#ke').textContent=e.message}};
+  $('#ka').onclick=async()=>{$('#ke').textContent='asking…';try{const r=await api('/v1/kb/'+nb()+'/ask',{method:'POST',body:JSON.stringify({question:$('#kq').value})});$('#ke').textContent='';
+   $('#ko').innerHTML=`<div class="card"><b class="${r.grounded?'ok':'er'}">${r.grounded?'Grounded in sources':'Not grounded: no verified citations'}</b><pre>${E(r.answer)}</pre></div>${r.citations.length?'<div class="card"><table>'+r.citations.map(c=>`<tr><td>[${c.n}]</td><td>${E(c.source)}#${c.chunk}</td><td class="m">${E(c.excerpt)}</td></tr>`).join('')+'</table></div>':''}`}catch(e){$('#ke').textContent=e.message}}}
+ if(tab=='chat'){const sid=sessionStorage.getItem('sid')||('web-'+Math.random().toString(36).slice(2,10));sessionStorage.setItem('sid',sid);const h=await api('/v1/chat/'+sid);
+  v.innerHTML=`<div class="card">${h.map(m=>`<p><b>${E(m.role)}</b><br>${E(m.text)}</p>`).join('')||'<span class="m">New session '+E(sid)+'. Prefix with ralph: / team: / plan: for modes.</span>'}</div><div class="card"><textarea id="cm"></textarea><div class="row"><button class="p" id="cs">Send</button><button id="cx">New session</button><span id="ce" class="m"></span></div></div>`;
+  $('#cs').onclick=async()=>{$('#ce').textContent='thinking…';try{await api('/v1/chat/'+sid,{method:'POST',body:JSON.stringify({message:$('#cm').value})});show()}catch(e){$('#ce').textContent=e.message}};
+  $('#cx').onclick=()=>{sessionStorage.removeItem('sid');show()}}
+ if(tab=='ledger'){const[vf,l]=await Promise.all([api('/v1/ledger/verify'),api('/v1/ledger?limit=100')]);v.innerHTML=`<div class="card"><b class="${vf.ok?'ok':'er'}">${vf.ok?'Chain verified':'CHAIN BROKEN at seq '+vf.broken_at}</b> <span class="m">${vf.entries} entries</span></div>
+  <div class="card"><table><tr><th>#</th><th>Run</th><th>Kind</th><th>Hash</th></tr>${l.map(x=>`<tr><td>${x.seq}</td><td>${x.run_id}</td><td>${x.kind}</td><td class="m">${x.hash.slice(0,16)}…</td></tr>`).join('')}</table></div>`}
+ }catch(e){v.innerHTML=`<div class="card er">${E(e.message)}${/401/.test(e.message)||/token/.test(e.message)?' — enter the API token above and reopen the tab.':''}</div>`}}
+fetch('/health').then(r=>r.json()).then(h=>$('#hl').textContent=`provider: ${h.provider} · auth: ${h.auth} · skills: ${h.skills}`);show();
+</script></body></html>

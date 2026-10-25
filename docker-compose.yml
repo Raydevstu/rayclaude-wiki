@@ -1,0 +1,15 @@
+services:
+  tier1:
+    build: .
+    ports: ["8000:8000"]
+    env_file: .env
+    volumes:
+      - tier1-data:/data
+      - ./sandbox:/sandbox:ro   # drop ':ro' and set TIER1_SANDBOX_WRITABLE=1 to enable vault write-back
+      - ./skills:/app/skills:ro
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+volumes:
+  tier1-data:
