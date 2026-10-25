@@ -42,5 +42,12 @@ This folder contains the isolated first prototype of Scope Guard.
 - `test_benchmark_guard_workflow.py` verifies success, blocking, and zero false-success results.
 - Tier-1 exposes both `GET` diagnostics and `POST /v1/guard/browser-repair` for a real user request; both remain read-only and fail closed.
 - Phase 1 Quick Wins are implemented by `repository_adapter.py`, `config_loader.py`, and `quickwin_cli.py` with read-only tests in `test_quickwins.py`.
+- The Repository-Aware Guard Contract injects Git root/branch/commit/dirty evidence into task capsules, exposes it through Tier-1, and blocks write workflows on wrong identity or unexplained user changes. It never mutates Git state.
+- The Repository-Aware Write Boundary requires explicit ownership confirmation that matches branch/commit and separates AI-owned rollback files from protected user files. It remains planning-only: no writes, commits, or rollback are executed.
+- `sandboxed_write_executor.py` is the first controlled write boundary: it validates ownership, identity, path containment, symlink safety, rollback readiness, and strict SHA-256 (or explicit `missing`) baseline digests, then performs atomic approved writes and verifies the exact resulting diff. Rollback and commit execution remain separate.
+- The same executor provides guarded rollback: it restores only AI-owned files after current-state and protected-user checks, then verifies the restored baseline. It does not commit or touch production state.
+- Tier-1 exposes an opt-in `POST /v1/guard/write` adapter. It is disabled by default and requires explicit approval, repository identity, exact ownership sets, and baseline digests before delegating to the executor. The browser-repair routes remain read-only.
+- Tier-1 exposes a read-only `POST /v1/guard/approval` adapter and Mission Control UI tab. It shows proposed content, ownership, risks, rollback instructions, repository identity, evidence level, and write enablement without executing writes.
+- Approval records persist in SQLite and are available through `GET /v1/guard/approvals` and `GET /v1/guard/approvals/{id}`. Local browser verification covered create, reload, and record reappearance; production browser evidence is not claimed.
 
 The guards are integrated into one read-only Tier-1 endpoint at `/v1/guard/browser-repair`. It inspects the current app identity and returns a truthful blocked result until live browser and journey evidence exists. It still does not edit files, launch processes, or perform rollback.

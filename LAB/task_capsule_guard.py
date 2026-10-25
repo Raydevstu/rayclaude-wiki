@@ -18,6 +18,10 @@ class TaskCapsuleInput:
     verification: tuple[str, ...]
     next_boundary: str
     risks: tuple[str, ...] = ()
+    repository_root: str = ""
+    repository_branch: str = "unavailable"
+    repository_commit: str = "unavailable"
+    repository_dirty: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -32,6 +36,10 @@ class TaskCapsule:
     next_boundary: str
     risks: tuple[str, ...]
     version: int = 1
+    repository_root: str = ""
+    repository_branch: str = "unavailable"
+    repository_commit: str = "unavailable"
+    repository_dirty: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -61,5 +69,9 @@ def validate_capsule(data: TaskCapsuleInput) -> tuple[TaskCapsule | None, Capsul
         return None, CapsuleDecision("BLOCKED", tuple(reasons))
     capsule = TaskCapsule(data.project, data.goal.strip(), data.implementation_state.strip(),
                           data.constraints, data.relevant_files, data.decisions,
-                          data.verification, data.next_boundary.strip(), data.risks)
+                          data.verification, data.next_boundary.strip(), data.risks,
+                          repository_root=data.repository_root,
+                          repository_branch=data.repository_branch,
+                          repository_commit=data.repository_commit,
+                          repository_dirty=data.repository_dirty)
     return capsule, CapsuleDecision("READY", ())

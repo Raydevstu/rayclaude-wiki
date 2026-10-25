@@ -136,7 +136,7 @@ def test_mcp_handlers(svc):
         note = await handle(svc, {"jsonrpc": "2.0", "method": "notifications/initialized"})
         return init, lst, call, bad, note
     init, lst, call, bad, note = run(go())
-    assert init["result"]["protocolVersion"] == "2025-03-26" and len(lst["result"]["tools"]) == 10
+    assert init["result"]["protocolVersion"] == "2025-03-26" and len(lst["result"]["tools"]) == 12
     assert json.loads(call["result"]["content"][0]["text"])["status"] == "ok"
     assert bad["error"]["code"] == -32602 and note is None
 

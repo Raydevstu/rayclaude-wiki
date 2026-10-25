@@ -12,8 +12,9 @@ try:
     from .scope_guard import ChangeContract, ChangedFile, evaluate
     from .task_capsule_guard import TaskCapsuleInput, validate_capsule
     from .cost_performance_guard import CallRecord, summarize_calls
-    from .rollback_guard import RollbackPlan
+    from .rollback_guard import RollbackPlan, OwnershipConfirmation, ownership_mismatch
     from .debugging_loop_guard import DebugAttempt, evaluate_attempt
+    from .repository_adapter import RepositoryIdentity, repository_mismatch
 except ImportError:  # pytest's LAB path keeps the original standalone imports working.
     from change_accountability_guard import ChangeAccountabilityContract, ObservedImpact, audit_changes
     from evidence_ladder_guard import EvidenceRecord, TestContract, evaluate_evidence
@@ -22,8 +23,9 @@ except ImportError:  # pytest's LAB path keeps the original standalone imports w
     from scope_guard import ChangeContract, ChangedFile, evaluate
     from task_capsule_guard import TaskCapsuleInput, validate_capsule
     from cost_performance_guard import CallRecord, summarize_calls
-    from rollback_guard import RollbackPlan
+    from rollback_guard import RollbackPlan, OwnershipConfirmation, ownership_mismatch
     from debugging_loop_guard import DebugAttempt, evaluate_attempt
+    from repository_adapter import RepositoryIdentity, repository_mismatch
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,10 @@ class BrowserRepairInput:
     calls: tuple[CallRecord, ...] = ()
     rollback: RollbackPlan | None = None
     debugging: DebugAttempt | None = None
+    repository: RepositoryIdentity | None = None
+    expected_branch: str | None = None
+    expected_commit: str | None = None
+    ownership: OwnershipConfirmation | None = None
 
 
 @dataclass(frozen=True)
@@ -77,6 +83,17 @@ def run_browser_repair(data: BrowserRepairInput) -> BrowserRepairResult:
                                    scope.status, runtime.status, "NOT_RUN", "NOT_RUN", "NOT_RUN",
                                    context_status)
     safety = authorize_action(data.action)
+    if data.action.permission == "write" and data.repository is not None:
+        mismatch = repository_mismatch(data.repository, data.expected_branch, data.expected_commit)
+        if mismatch:
+            return BrowserRepairResult("BLOCKED", "repository", mismatch,
+                                       scope.status, runtime.status, "BLOCKED", "NOT_RUN", "NOT_RUN",
+                                       context_status, "NOT_RUN", "missing")
+        if data.repository.dirty and data.ownership is None:
+            return BrowserRepairResult("BLOCKED", "repository",
+                                       "working tree has unexplained user changes; explicit ownership confirmation is required",
+                                       scope.status, runtime.status, "BLOCKED", "NOT_RUN", "NOT_RUN",
+                                       context_status, "NOT_RUN", "missing")
     if data.action.permission == "write" and data.rollback is None:
         return BrowserRepairResult("BLOCKED", "rollback", "write action has no rollback boundary",
                                    scope.status, runtime.status, "BLOCKED", "NOT_RUN", "NOT_RUN",
@@ -85,6 +102,16 @@ def run_browser_repair(data: BrowserRepairInput) -> BrowserRepairResult:
         return BrowserRepairResult("BLOCKED", "rollback", "rollback boundary is not ready",
                                    scope.status, runtime.status, "BLOCKED", "NOT_RUN", "NOT_RUN",
                                    context_status, "NOT_RUN", data.rollback.status)
+    if data.action.permission == "write" and data.repository is not None and data.rollback is not None:
+        ownership_reason = ownership_mismatch(
+            data.rollback, data.ownership,
+            repository_commit=data.repository.commit,
+            repository_branch=data.repository.branch,
+        )
+        if ownership_reason:
+            return BrowserRepairResult("BLOCKED", "ownership", ownership_reason,
+                                       scope.status, runtime.status, "BLOCKED", "NOT_RUN", "NOT_RUN",
+                                       context_status, "NOT_RUN", data.rollback.status)
     if safety.status != "ALLOW":
         return BrowserRepairResult("BLOCKED", "safety", safety.recommendation,
                                    scope.status, runtime.status, safety.status, "NOT_RUN", "NOT_RUN",
