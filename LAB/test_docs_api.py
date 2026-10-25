@@ -19,3 +19,9 @@ def test_docs_content_is_readable_and_path_traversal_is_blocked():
     assert response.json()["path"] == "README.md"
     assert "Tier-1" in response.json()["content"]
     assert client.get("/v1/docs/..%2F..%2Fsecrets.txt").status_code == 404
+
+
+def test_docs_ui_has_visible_two_pane_reader_layout():
+    html = __import__("pathlib").Path("tier1/static/index.html").read_text(encoding="utf-8")
+    assert ".grid{display:grid" in html
+    assert "grid-template-columns" in html
