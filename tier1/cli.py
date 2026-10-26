@@ -44,6 +44,8 @@ def main(argv=None):
     bn.add_argument("tasks")
     bn.add_argument("--modes", default="autopilot,ralph,team")
     bn.add_argument("--max-cost", type=float)
+    ev = sub.add_parser("evaluate", help="evaluate the ten AI developer pain points")
+    ev.add_argument("--markdown", action="store_true", help="print the Markdown report instead of JSON")
     ch = sub.add_parser("chat", help="send a message in a persistent chat session")
     ch.add_argument("session")
     ch.add_argument("message")
@@ -114,6 +116,10 @@ def main(argv=None):
             from .safety import safe_path
             tasks = json.loads(safe_path(svc.settings.sandbox_dir, a.tasks).read_text())
             _print(asyncio.run(run_bench(svc, tasks, tuple(a.modes.split(",")), a.max_cost)))
+        elif a.cmd == "evaluate":
+            from .evaluation import render_markdown, run_evaluation
+            report = run_evaluation(svc)
+            print(render_markdown(report) if a.markdown else json.dumps(report.to_dict(), indent=2, default=str))
         elif a.cmd == "chat":
             print(asyncio.run(svc.chat.send(a.session, a.message, trigger="cli"))["answer"])
         elif a.cmd == "autofill":

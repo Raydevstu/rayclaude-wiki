@@ -461,6 +461,31 @@ def test_background_task_lifecycle_events_and_cancel(settings):
         assert not svc.store.q("SELECT 1 FROM runs WHERE trigger LIKE ? AND status='running'", (f"async:{tid}%",))
 
 
+def test_background_task_timeout_reports_terminal_state(settings):
+    class SlowModes:
+        async def run(self, *args, **kwargs):
+            await asyncio.sleep(1.2)
+            return {"status": "ok"}
+
+    from tier1.tasks import Tasks
+    tasks = Tasks(SlowModes(), __import__("tier1.store", fromlist=["Store"]).Store(":memory:"))
+    async def wait_done():
+        tid = tasks.start("slow", timeout_s=1)
+        for _ in range(150):
+            if tasks.get(tid)["status"] != "running":
+                return tid
+            await asyncio.sleep(0.01)
+        return tid
+    tid = run(wait_done())
+    assert tasks.get(tid)["status"] == "timeout"
+    assert tasks.public(tasks.get(tid))["progress"] == 100
+
+
+def test_benchmark_task_checks_are_reported(svc):
+    from tier1.bench import run_bench
+    result = run(run_bench(svc, [{"prompt": "say hello", "expect": ["Answer"]}], ("autopilot",), timeout_s=5))
+    assert result["rows"][0]["correctness"] == "passed"
+    assert result["summary"]["autopilot"]["correctness_rate"] == 1.0
 def test_background_task_completes_and_returns_result(settings):
     svc, _ = build(settings)
     with TestClient(create_app(svc)) as c:
@@ -644,6 +669,20 @@ def test_api_ingest_budget_save_and_bench(settings):
     assert len(b["rows"]) == 4 and b["summary"]["autopilot"]["avg_cost_usd"] > 0 and "mock" in b["caveat"]
     assert c.post("/v1/bench", headers=H, json={"tasks": ["x"], "modes": ["godmode"]}).status_code == 422
     assert c.post("/v1/bench", headers=H, json={"tasks": []}).status_code == 422
+
+
+def test_api_evaluation_reports_all_priorities_without_secrets(settings):
+    svc, _ = build(settings)
+    c = TestClient(create_app(svc))
+    response = c.post("/v1/evaluate", headers=H, json={})
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["results"]) >= 10
+    assert set(body["priority_status"]) == {str(i) for i in range(1, 11)}
+    assert body["results"][0]["provenance"] == "mock"
+    assert "api_key" not in response.text.lower()
+    forged = c.post("/v1/evaluate", headers=H, json={"production_available": True})
+    assert forged.status_code == 422
 
 
 def test_bench_clears_cache_so_modes_are_measured_fairly(settings):

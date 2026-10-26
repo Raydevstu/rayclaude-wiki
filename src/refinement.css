@@ -1,0 +1,24 @@
+:root[data-theme="light"] { color:#182131; background:#f4f6fb; color-scheme:light; }
+:root[data-theme="light"] body { background:#f4f6fb; }
+:root[data-theme="light"] .app-shell { background:radial-gradient(circle at 70% -10%, #dce7ff 0, transparent 34%), #f4f6fb; }
+:root[data-theme="light"] .sidebar { background:rgba(255,255,255,.86); border-color:#dbe1eb; }
+:root[data-theme="light"] .topbar { border-color:#dbe1eb; }
+:root[data-theme="light"] .metric-card, :root[data-theme="light"] .panel { background:rgba(255,255,255,.82); border-color:#dbe1eb; }
+:root[data-theme="light"] .nav-item:hover, :root[data-theme="light"] .nav-item.active { color:#182131; background:#e8edf7; }
+:root[data-theme="light"] h1, :root[data-theme="light"] h2, :root[data-theme="light"] h3, :root[data-theme="light"] .metric-card strong, :root[data-theme="light"] .evidence-row strong { color:#182131; }
+:root[data-theme="light"] .icon-button, :root[data-theme="light"] .secondary-button, :root[data-theme="light"] .list-card, :root[data-theme="light"] .action-panel { background:#fff; border-color:#dbe1eb; color:#344057; }
+:root[data-theme="light"] th, :root[data-theme="light"] td { border-color:#e2e6ee; }
+.evidence-stack { display:grid; gap:12px; }
+.evidence-stack > .panel:first-child { min-height:280px; }
+.table-primary { color:#d9e1f3; max-width:360px; overflow:hidden; text-overflow:ellipsis; }
+.hash { color:#9db3ff; font-size:11px; }
+.token-input,.task-form input,.task-form select,.task-form textarea { width:100%; border:1px solid #35415a; border-radius:8px; background:#101621; color:#edf0f7; padding:9px 10px; font:inherit; }
+.token-input { width:170px; font-size:12px; }
+.task-form { display:grid; gap:14px; margin-top:22px; }
+.task-form label { display:grid; gap:7px; color:#aeb9ca; font-size:12px; }
+.task-form textarea { min-height:92px; resize:vertical; }
+.form-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.task-actions { display:flex; gap:8px; align-items:center; }
+:root[data-theme="light"] .token-input,:root[data-theme="light"] .task-form input,:root[data-theme="light"] .task-form select,:root[data-theme="light"] .task-form textarea { background:#fff; border-color:#dbe1eb; color:#182131; }
+@media (max-width:900px) { .form-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:560px) { .content { padding:24px 14px 40px; }.sidebar { width:58px; padding-left:6px; padding-right:6px; }.brand { padding-left:8px; padding-right:8px; }.nav-item { padding:11px 8px; }.panel { padding:16px; border-radius:10px; }.usage-grid,.docs-grid { grid-template-columns:1fr; }.action-panel { align-items:stretch; flex-direction:column; }.table-wrap { margin-left:-6px; margin-right:-6px; } h1 { font-size:28px; } }

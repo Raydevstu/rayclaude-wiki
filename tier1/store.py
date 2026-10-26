@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS approval_records(id TEXT PRIMARY KEY, ts REAL, status
 CREATE TABLE IF NOT EXISTS guard_write_audits(id TEXT PRIMARY KEY, approval_id TEXT, ts REAL,
   action TEXT, status TEXT, body TEXT);
 CREATE TABLE IF NOT EXISTS sandbox_jobs(id TEXT PRIMARY KEY, ts REAL, status TEXT, body TEXT);
+CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY, ts REAL, status TEXT, body TEXT);
+CREATE TABLE IF NOT EXISTS task_events(seq INTEGER PRIMARY KEY, task_id TEXT, ts REAL, kind TEXT, body TEXT);
 """
 GENESIS = "0" * 64
 
@@ -216,6 +218,42 @@ class Store:
         keep = max(1, int(keep))
         self.x("DELETE FROM sandbox_jobs WHERE id NOT IN "
                "(SELECT id FROM sandbox_jobs ORDER BY ts DESC, id DESC LIMIT ?)", (keep,))
+
+    # ---- durable background tasks
+    def task_put(self, task_id: str, status: str, body: dict):
+        self.x("INSERT OR REPLACE INTO tasks(id,ts,status,body) VALUES(?,?,?,?)",
+               (task_id, time.time(), status, json.dumps(body, default=str)))
+
+    def task_get(self, task_id: str):
+        rows = self.q("SELECT id,ts,status,body FROM tasks WHERE id=?", (task_id,))
+        if not rows:
+            return None
+        row = rows[0]
+        row["body"] = json.loads(row["body"])
+        return row
+
+    def tasks_list(self, limit: int = 50):
+        return self.q("SELECT id,status FROM tasks ORDER BY ts DESC LIMIT ?", (limit,))
+
+    def task_events(self, task_id: str):
+        rows = self.q("SELECT seq,ts,kind,body FROM task_events WHERE task_id=? ORDER BY seq", (task_id,))
+        for row in rows:
+            row["body"] = json.loads(row["body"])
+        return rows
+
+    def task_event_add(self, task_id: str, kind: str, body: dict):
+        self.x("INSERT INTO task_events(task_id,ts,kind,body) VALUES(?,?,?,?)",
+               (task_id, time.time(), kind, json.dumps(body, default=str)))
+
+    def reconcile_interrupted_tasks(self) -> int:
+        rows = self.q("SELECT id,body FROM tasks WHERE status IN ('running','cancelling')")
+        for row in rows:
+            body = json.loads(row["body"])
+            body["error"] = "task interrupted by process restart"
+            body["progress"] = 100
+            self.task_put(row["id"], "interrupted", body)
+            self.task_event_add(row["id"], "interrupted", {"reason": "process restart"})
+        return len(rows)
 
     # ---- jobs
     def job_put(self, name, kind, spec, prompt, enabled=True):

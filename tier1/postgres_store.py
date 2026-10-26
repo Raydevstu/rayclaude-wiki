@@ -6,6 +6,7 @@ import json
 import re
 import threading
 import time
+from contextlib import contextmanager
 
 try:
     import psycopg
@@ -18,7 +19,7 @@ from .util import sha
 
 _UPSERT_KEYS = {
     "runs": "id", "capsules": "run_id", "cache": "key", "approval_records": "id",
-    "guard_write_audits": "id", "sandbox_jobs": "id", "jobs": "name",
+    "guard_write_audits": "id", "sandbox_jobs": "id", "tasks": "id", "jobs": "name",
 }
 
 
@@ -75,6 +76,13 @@ class PostgresStore(Store):
                 cur.execute(self._sql(sql), args)
                 names = [d.name for d in cur.description]
                 return [dict(zip(names, row)) for row in cur.fetchall()]
+
+    @contextmanager
+    def transaction(self):
+        """Run a related set of store calls atomically on PostgreSQL."""
+        with self.lock:
+            with self.db.transaction():
+                yield
 
     def ledger_append(self, run_id: str, kind: str, payload: dict) -> str:
         body = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)

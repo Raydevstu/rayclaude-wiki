@@ -23,7 +23,7 @@ def _price(tier: str, default: tuple[float, float]) -> tuple[float, float]:
 @dataclass(frozen=True)
 class Settings:
     env: str = "development"
-    provider: str = "mock"            # mock | anthropic | openai
+    provider: str = "mock"            # mock | anthropic | openai | ollama
     api_key: str = ""
     base_url: str = ""
     models: dict = field(default_factory=dict)
@@ -52,12 +52,21 @@ class Settings:
     memory_bank_id: str = "staging-bank"
     memory_project_id: str = "Rayclaude-wiki"
 
+    def validate_runtime(self) -> None:
+        if self.env.lower() != "production":
+            return
+        if not self.database_url.startswith(("postgres://", "postgresql://")):
+            raise ValueError("production requires a PostgreSQL TIER1_DATABASE_URL")
+        if not self.api_token:
+            raise ValueError("production requires an API token (TIER1_API_TOKEN)")
+
 
 def load() -> Settings:
     provider = os.getenv("TIER1_PROVIDER", "mock").lower()
     defaults = {
         "anthropic": ("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"),
         "openai": ("", "", ""),
+        "ollama": ("llama3.2", "llama3.2", "llama3.2"),
         "mock": ("mock-small", "mock-medium", "mock-large"),
     }.get(provider, ("", "", ""))
     models = {t: os.getenv(f"TIER1_MODEL_{t.upper()}", d) for t, d in zip(("small", "medium", "large"), defaults)}

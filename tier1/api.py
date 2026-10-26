@@ -56,6 +56,8 @@ class RunReq(BaseModel):
     tier: str | None = None
     mode: str | None = None
     max_cost_usd: float | None = Field(default=None, gt=0, le=100)
+    timeout_s: float = Field(default=300, gt=0, le=3600)
+    acceptance: dict | None = None
 
 
 class IngestReq(BaseModel):
@@ -68,6 +70,10 @@ class BenchReq(BaseModel):
     tasks: list[str | dict]
     modes: list[str] = ["autopilot", "ralph", "team"]
     max_cost_usd: float | None = Field(default=None, gt=0, le=100)
+
+
+class EvaluateReq(BaseModel):
+    model_config = {"extra": "forbid"}
 
 
 class SourceReq(BaseModel):
@@ -161,6 +167,10 @@ def create_app(svc: services.Services | None = None) -> FastAPI:
     s = svc.settings
     if s.env == "production" and (not s.api_token or not s.webhook_secret):
         raise RuntimeError("production requires TIER1_API_TOKEN and TIER1_WEBHOOK_SECRET")
+    try:
+        s.validate_runtime()
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
 
     @asynccontextmanager
     async def lifespan(app):
@@ -684,27 +694,18 @@ def create_app(svc: services.Services | None = None) -> FastAPI:
 
     @app.post("/v1/memory", dependencies=[Depends(auth)])
     def mem_add(m: MemReq):
-        svc.store.memory_add(m.text, m.tags)
-        return {"ok": True}
+        return svc.memory.add(m.text, m.tags)
 
     @app.post("/v1/memory/codex-event", dependencies=[Depends(auth)])
     def memory_codex_event(payload: dict):
-        try:
-            return RemoteMemory(s).capture(payload)
-        except RemoteMemoryError as e:
-            raise HTTPException(503, str(e))
+        return svc.memory.add(str(payload.get("text", "")), str(payload.get("tags", "")))
 
     @app.post("/v1/memory/search", dependencies=[Depends(auth)])
     def memory_search(payload: dict):
         query = str(payload.get("query", "")).strip()
         if not query:
             raise HTTPException(422, "query is required")
-        if s.memory_url:
-            try:
-                return RemoteMemory(s).search(query)
-            except RemoteMemoryError as e:
-                raise HTTPException(503, str(e))
-        return {"ok": True, "source": "local", "results": svc.store.memory_search(query, int(payload.get("k", 3)))}
+        return svc.memory.search(query, int(payload.get("k", 3)))
 
     @app.get("/v1/jobs", dependencies=[Depends(auth)])
     def jobs():
@@ -822,6 +823,11 @@ def create_app(svc: services.Services | None = None) -> FastAPI:
         from .bench import run_bench
         return await guard(run_bench)(svc, r.tasks, tuple(r.modes), r.max_cost_usd)
 
+    @app.post("/v1/evaluate", dependencies=[Depends(auth), Depends(limit)])
+    async def evaluate_ep(r: EvaluateReq):
+        from .evaluation import run_evaluation
+        return run_evaluation(svc).to_dict()
+
     @app.post("/v1/kb/{nb}/studio", dependencies=[Depends(auth), Depends(limit)])
     async def kb_studio(nb: str, r: StudioReq):
         return await guard(svc.kb.studio)(svc.gateway, nb, r.kind, r.focus)
@@ -834,7 +840,7 @@ def create_app(svc: services.Services | None = None) -> FastAPI:
             parse_mode(req.prompt, req.mode)
             if req.tier not in (None, "small", "medium", "large"):
                 raise ValueError("tier must be small, medium or large")
-            return {"task_id": svc.tasks.start(req.prompt, req.mode, req.tier, req.max_cost_usd), "status": "running"}
+            return {"task_id": svc.tasks.start(req.prompt, req.mode, req.tier, req.max_cost_usd, req.timeout_s, req.acceptance), "status": "running"}
         except ValueError as e:
             raise HTTPException(422, str(e))
         except TaskLimit as e:
@@ -843,7 +849,7 @@ def create_app(svc: services.Services | None = None) -> FastAPI:
     def task_or_404(tid):
         r = svc.tasks.get(tid)
         if not r:
-            raise HTTPException(404, "task not found (tasks are kept in memory; completed runs stay in /v1/runs)")
+            raise HTTPException(404, "task not found")
         return r
 
     @app.get("/v1/tasks/{tid}", dependencies=[Depends(auth)])
@@ -857,6 +863,13 @@ def create_app(svc: services.Services | None = None) -> FastAPI:
             raise HTTPException(409, "task is not running")
         return {"cancelling": tid}
 
+    @app.post("/v1/tasks/{tid}/retry", status_code=202, dependencies=[Depends(auth), Depends(limit)])
+    def task_retry(tid: str):
+        new_id = svc.tasks.retry(tid)
+        if not new_id:
+            raise HTTPException(409, "task is not retryable")
+        return {"task_id": new_id, "retry_of": tid, "status": "running"}
+
     @app.get("/v1/tasks/{tid}/events", dependencies=[Depends(auth)])
     async def task_events(tid: str):
         task_or_404(tid)
@@ -868,7 +881,7 @@ def create_app(svc: services.Services | None = None) -> FastAPI:
                     after = e["seq"]
                     yield "event: ledger\ndata: " + json.dumps({k: e[k] for k in ("seq", "run_id", "kind")}) + "\n\n"
                 r = svc.tasks.get(tid)
-                if r is None or r["status"] != "running":
+                if r is None or r["status"] in {"done", "failed_verification", "timeout", "cancelled", "failed", "interrupted"}:
                     for e in svc.tasks.events_since(tid, after):
                         yield "event: ledger\ndata: " + json.dumps({k: e[k] for k in ("seq", "run_id", "kind")}) + "\n\n"
                     yield "event: done\ndata: " + json.dumps({"status": r["status"] if r else "unknown"}) + "\n\n"

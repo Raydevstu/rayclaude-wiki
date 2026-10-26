@@ -14,6 +14,7 @@ from .store import Store, build_store
 from .tasks import Tasks
 from .chat import Chat
 from .tools import Tools
+from .memory import MemoryAdapter
 
 
 @dataclass
@@ -30,6 +31,7 @@ class Services:
     slack: Slack = None
     tasks: Tasks = None
     chat: Chat = None
+    memory: MemoryAdapter = None
 
 
 def build(settings=None, provider=None, tools_transport=None, notify_transport=None, slack_transport=None) -> Services:
@@ -41,7 +43,9 @@ def build(settings=None, provider=None, tools_transport=None, notify_transport=N
     orch = Orchestrator(s, store, gw, Tools(s, tools_transport, kb), skills, kb)
     modes = Modes(s, store, gw, orch)
     notifier = Notifier(s, notify_transport)
-    svc = Services(s, store, gw, skills, orch, Scheduler(store, orch, modes.run, notifier, kb), kb, modes, notifier)
+    svc = Services(s, store, gw, skills, orch, Scheduler(store, orch, modes.run, notifier, kb), kb, modes, notifier,
+                   memory=MemoryAdapter(s, store))
     svc.slack = Slack(svc, slack_transport)
     svc.tasks, svc.chat = Tasks(modes, store), Chat(store, gw, modes)
+    store.reconcile_interrupted_tasks()
     return svc

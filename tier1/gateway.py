@@ -74,14 +74,14 @@ class AnthropicProvider:
 
 class OpenAIProvider:
     """Any OpenAI-compatible /chat/completions endpoint (OpenAI, vLLM, Ollama, gateways)."""
-    name = "openai"
 
     def __init__(self, key: str, base: str = "", transport=None):
         self.key, self.base, self.transport = key, (base or "https://api.openai.com/v1").rstrip("/"), transport
 
     async def complete(self, *, task, model, system, prompt, max_tokens):
         async with httpx.AsyncClient(timeout=120, transport=self.transport) as c:
-            r = await c.post(f"{self.base}/chat/completions", headers={"Authorization": f"Bearer {self.key}"},
+            headers = {"Authorization": f"Bearer {self.key}"} if self.key else {}
+            r = await c.post(f"{self.base}/chat/completions", headers=headers,
                              json={"model": model, "max_tokens": max_tokens,
                                    "messages": [{"role": "system", "content": system},
                                                 {"role": "user", "content": prompt}]})
@@ -97,11 +97,13 @@ class OpenAIProvider:
 def make_provider(s: Settings):
     if s.provider == "mock":
         return MockProvider()
-    if not s.api_key:
+    local_ollama = s.provider == "ollama"
+    if not s.api_key and not local_ollama:
         raise ProviderError("TIER1_PROVIDER_API_KEY is required for provider " + s.provider)
     if not all(s.models.values()):
         raise ProviderError("set TIER1_MODEL_SMALL / MEDIUM / LARGE for provider " + s.provider)
-    return (AnthropicProvider if s.provider == "anthropic" else OpenAIProvider)(s.api_key, s.base_url)
+    base = s.base_url or ("http://127.0.0.1:11434/v1" if local_ollama else "")
+    return (AnthropicProvider if s.provider == "anthropic" else OpenAIProvider)(s.api_key, base)
 
 
 # Per-request soft spend cap. A shared mutable dict, so concurrent sub-tasks (asyncio.gather) draw from one budget.

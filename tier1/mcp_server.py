@@ -67,10 +67,9 @@ async def call_tool(svc, name: str, args: dict):
     if name == "tier1_verify_ledger":
         return svc.store.ledger_verify()
     if name == "memory_add":
-        svc.store.memory_add(str(args.get("text", "")), str(args.get("tags", "")))
-        return {"ok": True, "source": "local"}
+        return svc.memory.add(str(args.get("text", "")), str(args.get("tags", "")))
     if name == "memory_search":
-        return {"ok": True, "source": "local", "results": svc.store.memory_search(str(args.get("query", "")), int(args.get("k", 3)))}
+        return svc.memory.search(str(args.get("query", "")), int(args.get("k", 3)))
     raise KeyError(name)
 
 
