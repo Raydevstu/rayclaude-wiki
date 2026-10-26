@@ -14,6 +14,7 @@ try:
     from .scope_guard import ChangeContract
     from .task_capsule_guard import TaskCapsuleInput
     from .cost_performance_guard import CallRecord
+    from .repository_adapter import inspect_repository
 except ImportError:  # standalone LAB test imports
     from evidence_ladder_guard import EvidenceRecord
     from guard_orchestrator import BrowserRepairInput, BrowserRepairResult, run_browser_repair
@@ -22,6 +23,7 @@ except ImportError:  # standalone LAB test imports
     from scope_guard import ChangeContract
     from task_capsule_guard import TaskCapsuleInput
     from cost_performance_guard import CallRecord
+    from repository_adapter import inspect_repository
 
 
 def _commit(root: Path) -> str:
@@ -41,6 +43,7 @@ def inspect_browser_repair(root: Path, port: int, title: str, route: str = "/", 
     The adapter deliberately supplies no write action and no fabricated browser evidence.
     """
     project = root.name
+    repository = inspect_repository(root)
     contract = RuntimeContract(project, _commit(root), port, route, title)
     observed = RuntimeEvidence(project, _commit(root), port, route, title, 200, True)
     scope = ChangeContract(
@@ -65,6 +68,9 @@ def inspect_browser_repair(root: Path, port: int, title: str, route: str = "/", 
             constraints=("read-only inspection", "do not claim browser proof without browser evidence"),
             relevant_files=("tier1/api.py", "tier1/static/index.html"), decisions=(),
             verification=("HTTP /health checked",), next_boundary="collect browser journey evidence",
+            repository_root=repository.root, repository_branch=repository.branch,
+            repository_commit=repository.commit, repository_dirty=repository.dirty,
         ),
         calls=(),
+        repository=repository,
     ))

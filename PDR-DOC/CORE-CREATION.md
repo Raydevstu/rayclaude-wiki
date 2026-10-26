@@ -608,6 +608,40 @@ The repository adapter provides read-only project identity: absolute root, Git a
 
 The integrated Tier-1 adapter also accepts `POST /v1/guard/browser-repair` with a real user request. It creates the task context, inspects the current project/runtime, and returns one fail-closed decision. The current implementation remains read-only and returns `BLOCKED` at missing browser evidence rather than applying a repair.
 
+### Repository-Aware Guard Contract
+
+**Implemented locations:** `LAB/repository_adapter.py`, `LAB/task_capsule_guard.py`, `LAB/guard_orchestrator.py`, `LAB/tier1_guard_adapter.py`
+
+The repository-aware contract automatically captures Git root, branch, short commit, and dirty state. These values are copied into the continuation capsule and exposed by the Tier-1 browser-repair response. A write action is blocked when the repository is non-Git, the expected branch or commit does not match, or unexplained user changes are present. This is a read-only ownership gate: it does not discard, stage, commit, or revert user work.
+
+#### Repository-aware write execution boundary
+
+**Implemented locations:** `LAB/rollback_guard.py`, `LAB/guard_orchestrator.py`
+
+The write boundary requires an explicit `OwnershipConfirmation` matching the inspected branch and commit and exactly enumerating AI-owned rollback files and protected user files. Dirty worktrees remain blocked without that confirmation. A ready rollback plan protects user-owned files and limits any future rollback scope to AI-owned files; the LAB implementation still plans this boundary only and does not execute writes or rollback.
+
+#### Sandboxed write executor
+
+**Implemented locations:** `LAB/sandboxed_write_executor.py`, `LAB/test_sandboxed_write_executor.py`
+
+`execute_sandboxed_write()` performs a complete preflight before touching disk: it validates the ready rollback plan, exact ownership confirmation, repository identity, approved file set, repository-root containment, symlink safety, and strict SHA-256 (or explicit `missing`) baseline digests. It then writes approved UTF-8 files atomically and verifies that the resulting changed-file set and contents match the requested AI-owned diff. Protected user files and baseline drift are rejected. This is a controlled local write executor; it does not execute rollback, commit changes, or claim production authorization.
+
+`execute_sandboxed_rollback()` now restores only the same AI-owned boundary after verifying expected post-write digests and protected-user digests. It refuses recovery when a user file changed or an AI file drifted after the write, then verifies the restored baseline. This is local rollback evidence, not production recovery or Git commit behavior.
+
+#### Tier-1 guarded write route
+
+**Implemented locations:** `tier1/api.py`, `LAB/test_tier1_guard_write.py`
+
+`POST /v1/guard/write` is an explicit, opt-in adapter for the sandboxed executor. It is disabled unless `TIER1_GUARD_WRITES=1`, requires request approval, requires the exact AI/user file sets and baseline digests, inspects the live repository identity, and delegates all file safety to the LAB executor. The existing browser-repair route remains read-only. This route is local-only and not production authorization.
+
+#### Mission Control approval UI
+
+**Implemented locations:** `tier1/api.py`, `tier1/static/index.html`, `LAB/test_tier1_guard_approval.py`
+
+Mission Control provides a read-only approval brief through `POST /v1/guard/approval` and a `Mission Control` UI tab. It displays proposed files and current/proposed content, AI-versus-user ownership, repository identity, risks, rollback instructions, evidence level, and whether guarded writes are enabled. It explicitly reports `write_execution: not performed`; it cannot enable or execute writes. Path escape is blocked before current-file inspection. Tier-1 writes remain disabled by default.
+
+Approval records are persisted in the existing SQLite store through `approval_records` and can be listed or reloaded through `GET /v1/guard/approvals` and `GET /v1/guard/approvals/{id}`. Browser verification against a temporary local server proved the flow: open Mission Control, persist a proposal, reload the page, and observe the same proposal record with `BLOCKED`, rollback, ownership, and write-disabled evidence.
+
 ## Adversarial integration and benchmark
 
 **Implemented locations:** `LAB/test_guard_orchestrator_adversarial.py`, `LAB/benchmark_guard_workflow.py`

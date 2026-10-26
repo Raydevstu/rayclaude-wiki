@@ -30,3 +30,14 @@ def test_hypothetical_current_capsule_is_ready():
     assert result is not None
     assert result.project == "Rayclaude-wiki"
     assert result.version == 1
+
+
+def test_capsule_carries_repository_identity():
+    result, decision = validate_capsule(capsule(
+        repository_root="D:/repo", repository_branch="main", repository_commit="abc123",
+        repository_dirty=False,
+    ))
+    assert decision.status == "READY"
+    assert result.repository_branch == "main"
+    assert result.repository_commit == "abc123"
+    assert result.repository_dirty is False

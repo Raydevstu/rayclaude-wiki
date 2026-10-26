@@ -16,6 +16,18 @@ class RepositoryIdentity:
     dirty: bool
 
 
+def repository_mismatch(identity: RepositoryIdentity, expected_branch: str | None = None,
+                        expected_commit: str | None = None) -> str | None:
+    """Return the first identity mismatch that makes a write unsafe."""
+    if not identity.is_git:
+        return "repository is not a Git worktree"
+    if expected_branch and identity.branch != expected_branch:
+        return f"branch mismatch: expected {expected_branch}, observed {identity.branch}"
+    if expected_commit and identity.commit != expected_commit:
+        return f"commit mismatch: expected {expected_commit}, observed {identity.commit}"
+    return None
+
+
 def _git(root: Path, *args: str) -> str | None:
     try:
         return subprocess.check_output(["git", "-C", str(root), *args], text=True,

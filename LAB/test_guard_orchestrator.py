@@ -4,8 +4,9 @@ from guard_orchestrator import BrowserRepairInput, run_browser_repair
 from runtime_identity_guard import RuntimeContract, RuntimeEvidence
 from safety_action_guard import ActionRequest
 from scope_guard import ChangeContract, ChangedFile
-from rollback_guard import FileOwnership, plan_rollback
+from rollback_guard import FileOwnership, OwnershipConfirmation, plan_rollback
 from debugging_loop_guard import DebugAttempt
+from repository_adapter import RepositoryIdentity
 
 
 def workflow(**overrides):
@@ -54,3 +55,43 @@ def test_incomplete_browser_evidence_cannot_claim_repair():
     ))
     assert result.status == "BLOCKED"
     assert result.stopped_at == "evidence"
+
+
+def test_dirty_repository_blocks_write_before_evidence():
+    result = run_browser_repair(workflow(repository=RepositoryIdentity("/repo", True, "main", "abc123", True)))
+    assert result.status == "BLOCKED"
+    assert result.stopped_at == "repository"
+
+
+def test_dirty_repository_reaches_guard_only_with_exact_ownership_confirmation():
+    rollback = plan_rollback((
+        FileOwnership("app/routes.py", "old", "new", "ai"),
+        FileOwnership("notes.md", "user-old", "user-new", "user"),
+    ))
+    result = run_browser_repair(workflow(
+        repository=RepositoryIdentity("/repo", True, "main", "abc123", True),
+        rollback=rollback,
+        ownership=OwnershipConfirmation("abc123", "main", ("app/routes.py",), ("notes.md",)),
+    ))
+    assert result.status == "VERIFIED"
+    assert result.rollback_status == "app/routes.py: available"
+
+
+def test_dirty_repository_rejects_unexplained_or_mismatched_ownership():
+    rollback = plan_rollback((FileOwnership("app/routes.py", "old", "new", "ai"),))
+    result = run_browser_repair(workflow(
+        repository=RepositoryIdentity("/repo", True, "main", "abc123", True),
+        rollback=rollback,
+        ownership=OwnershipConfirmation("abc123", "main", ("other.py",)),
+    ))
+    assert result.status == "BLOCKED"
+    assert result.stopped_at == "ownership"
+
+
+def test_wrong_branch_and_stale_commit_block_write():
+    result = run_browser_repair(workflow(
+        repository=RepositoryIdentity("/repo", True, "feature", "old", False),
+        expected_branch="main", expected_commit="abc123",
+    ))
+    assert result.status == "BLOCKED"
+    assert result.stopped_at == "repository"

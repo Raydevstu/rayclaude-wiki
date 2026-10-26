@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY, val TEXT, exp REAL);
 CREATE TABLE IF NOT EXISTS memory(id INTEGER PRIMARY KEY, ts REAL, text TEXT, tags TEXT);
 CREATE TABLE IF NOT EXISTS jobs(name TEXT PRIMARY KEY, kind TEXT, spec TEXT, prompt TEXT, enabled INT,
   last_minute TEXT, last_run TEXT, last_status TEXT);
+CREATE TABLE IF NOT EXISTS approval_records(id TEXT PRIMARY KEY, ts REAL, status TEXT, body TEXT);
+CREATE TABLE IF NOT EXISTS guard_write_audits(id TEXT PRIMARY KEY, approval_id TEXT, ts REAL,
+  action TEXT, status TEXT, body TEXT);
 """
 GENESIS = "0" * 64
 
@@ -151,6 +154,42 @@ class Store:
 
     def memory_list(self, limit=50):
         return self.q("SELECT id, ts, substr(text,1,200) text, tags FROM memory ORDER BY id DESC LIMIT ?", (limit,))
+
+    # ---- guarded write approvals
+    def approval_put(self, record_id: str, status: str, body: dict):
+        self.x("INSERT OR REPLACE INTO approval_records(id,ts,status,body) VALUES(?,?,?,?)",
+               (record_id, time.time(), status, json.dumps(body, default=str)))
+
+    def approval_get(self, record_id: str):
+        rows = self.q("SELECT id, ts, status, body FROM approval_records WHERE id=?", (record_id,))
+        if not rows:
+            return None
+        row = rows[0]
+        row["body"] = json.loads(row["body"])
+        return row
+
+    def approvals_list(self, limit=50):
+        return self.q("SELECT id, ts, status FROM approval_records ORDER BY ts DESC LIMIT ?", (limit,))
+
+    # ---- guarded write execution audit
+    def write_audit_put(self, audit_id: str, approval_id: str, action: str, status: str, body: dict):
+        self.x("INSERT OR REPLACE INTO guard_write_audits(id,approval_id,ts,action,status,body) VALUES(?,?,?,?,?,?)",
+               (audit_id, approval_id, time.time(), action, status, json.dumps(body, default=str)))
+
+    def write_audit_get(self, audit_id: str):
+        rows = self.q("SELECT id, approval_id, ts, action, status, body FROM guard_write_audits WHERE id=?", (audit_id,))
+        if not rows:
+            return None
+        row = rows[0]
+        row["body"] = json.loads(row["body"])
+        return row
+
+    def write_audits_list(self, approval_id: str, limit=20):
+        rows = self.q("SELECT id, approval_id, ts, action, status, body FROM guard_write_audits WHERE approval_id=? ORDER BY ts DESC LIMIT ?",
+                      (approval_id, limit))
+        for row in rows:
+            row["body"] = json.loads(row["body"])
+        return rows
 
     # ---- jobs
     def job_put(self, name, kind, spec, prompt, enabled=True):

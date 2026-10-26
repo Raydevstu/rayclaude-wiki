@@ -745,3 +745,25 @@ The proposal review changed the sequence: preserve the completed guard foundatio
 - Quickwin CLI: emits repository and guard configuration as JSON without modifying the workspace.
 
 Direct verification: `65 LAB tests passed`. This is implementation and local test evidence; it does not prove production Git hosting, authentication, or deployment behavior.
+
+### Repository-Aware Guard Contract evidence
+
+The repository-aware vertical slice is implemented and locally verified. Clean repositories report branch and commit identity; dirty repositories are observable and cannot pass the write boundary; wrong-branch and stale-commit expectations block writes; task capsules preserve repository identity; and Tier-1 guard responses include the repository object. The contract is intentionally fail-closed and read-only. It does not automatically resolve user changes, create commits, or execute rollback.
+
+#### Repository-aware write boundary evidence
+
+The LAB contract now allows a dirty repository to pass the repository gate only when explicit ownership confirmation matches the current branch and commit, lists exactly the AI-owned files, and lists protected user files. Mismatched ownership, branch, or commit is blocked. Synthetic coverage proves a confirmed dirty worktree can reach the existing verification gates while user files remain outside the rollback boundary. This is local planning evidence; no file write or rollback execution is claimed.
+
+#### Sandboxed write executor evidence
+
+The executor is implemented and locally tested. It performs preflight ownership, identity, path-containment, symlink, rollback-readiness, and strict SHA-256 (or explicit `missing`) baseline-digest checks; writes only the exact AI-owned set; preserves protected user files; and verifies the post-write contents and changed-file set. Synthetic tests cover successful approved writes, missing ownership, protected files, path traversal, wrong identity, and baseline drift. No rollback execution, commit, or production authorization is claimed.
+
+Rollback execution is now implemented as a separate guarded operation. It restores only AI-owned files, requires proof of the expected post-write state, refuses changed protected-user files, and verifies the restored baseline. Synthetic recovery tests pass for successful restoration and changed-user-file protection. This remains local LAB evidence and does not commit or recover production state.
+
+Tier-1 now exposes an opt-in `POST /v1/guard/write` adapter. The route is disabled by default, requires explicit approval, checks repository identity and exact ownership/digest contracts, and delegates to the sandboxed executor. Tests prove the disabled-by-default, approval, and wrong-identity gates. No production authorization or live agent write is claimed.
+
+#### Mission Control approval evidence
+
+Mission Control is implemented as a read-only approval surface. `POST /v1/guard/approval` returns proposed content, ownership boundaries, repository identity, risks, rollback instructions, evidence level, and explicit write status. The UI never invokes the write executor. Focused approval/write tests and the full LAB suite pass; the user-requested port 8000 was unavailable, so the verification used an isolated temporary port.
+
+The approval record is now durable: SQLite stores each proposal, while list/get routes support read-after-reload inspection. Real browser verification was completed on a temporary local server at port 8766: Mission Control opened, a proposal was persisted, the browser reloaded, and the record was visible again as `BLOCKED` with `write_execution: not performed` and writes disabled. This is local browser evidence, not production evidence.
