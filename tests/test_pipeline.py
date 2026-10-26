@@ -136,13 +136,13 @@ def test_mcp_handlers(svc):
         note = await handle(svc, {"jsonrpc": "2.0", "method": "notifications/initialized"})
         return init, lst, call, bad, note
     init, lst, call, bad, note = run(go())
-    assert init["result"]["protocolVersion"] == "2025-03-26" and len(lst["result"]["tools"]) == 10
+    assert init["result"]["protocolVersion"] == "2025-03-26" and len(lst["result"]["tools"]) == 12
     assert json.loads(call["result"]["content"][0]["text"])["status"] == "ok"
     assert bad["error"]["code"] == -32602 and note is None
 
 
 def test_mcp_stdio_subprocess(tmp_path):
-    env = {"PATH": __import__("os").environ["PATH"], "TIER1_DB": str(tmp_path / "m.db"), "TIER1_SKILLS_DIR": "skills",
+    env = {**__import__("os").environ, "TIER1_DB": str(tmp_path / "m.db"), "TIER1_SKILLS_DIR": "skills",
            "TIER1_PROVIDER": "mock"}
     msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
@@ -155,7 +155,7 @@ def test_mcp_stdio_subprocess(tmp_path):
 
 
 def test_cli_run(tmp_path):
-    env = {"PATH": __import__("os").environ["PATH"], "TIER1_DB": str(tmp_path / "c.db"), "TIER1_SKILLS_DIR": "skills"}
+    env = {**__import__("os").environ, "TIER1_DB": str(tmp_path / "c.db"), "TIER1_SKILLS_DIR": "skills"}
     p = subprocess.run([sys.executable, "-m", "tier1", "run", "Explain caching", "--json"], capture_output=True,
                        text=True, timeout=60, env=env)
     assert p.returncode == 0 and json.loads(p.stdout)["status"] == "ok"

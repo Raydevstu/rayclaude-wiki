@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, unquote
 
 from . import services
 from .autofill import autofill
@@ -20,6 +20,35 @@ from .tasks import TaskLimit
 
 log = logging.getLogger("tier1")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,40}$")
+DOC_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _doc_category(path: str) -> str:
+    if path == "README.md": return "Getting Started"
+    if path.startswith("skills/"): return "Skills"
+    if path.startswith("LAB/"): return "Safety"
+    return "Reference"
+
+
+def _documents() -> list[dict]:
+    result = []
+    for path in sorted(DOC_ROOT.rglob("*.md")):
+        rel = path.relative_to(DOC_ROOT).as_posix()
+        if any(part.startswith(".") or part in {"data", "__pycache__"} for part in path.relative_to(DOC_ROOT).parts):
+            continue
+        category = _doc_category(rel)
+        result.append({"id": rel, "path": rel, "title": path.stem, "category": category,
+                       "reference": category == "Reference"})
+    return result
+
+
+FAQ = [
+    {"question": "What is Tier-1?", "answer": "A governed agent control plane with usage accounting, skills, notebooks, MCP, approvals, and sandbox boundaries."},
+    {"question": "Is staging free?", "answer": "Yes. Free Render staging uses SQLite, which is ephemeral and may lose data after a restart."},
+    {"question": "How does Codex connect?", "answer": "Codex connects through the local tier1 MCP server and can call governed tools over stdio."},
+    {"question": "Are writes enabled?", "answer": "No. Writes and rollback remain disabled by default and require approval and sandbox gates."},
+    {"question": "How do I use durable storage?", "answer": "Set TIER1_DATABASE_URL to a PostgreSQL connection string for production persistence."},
+]
 
 
 class RunReq(BaseModel):
@@ -148,12 +177,20 @@ def create_app(svc: services.Services | None = None) -> FastAPI:
     def guard_root() -> Path:
         return Path(os.environ.get("TIER1_GUARD_ROOT", str(Path(__file__).resolve().parent.parent))).resolve()
 
-    def sandbox_lifecycle():
-        from .sandbox_lifecycle import SandboxLifecycle
+    def sandbox_jobs():
+        from .sandbox_lifecycle import SandboxJobManager, SandboxLifecycle
         parent = os.environ.get("TIER1_SANDBOX_PARENT", "").strip()
         if not parent:
             raise HTTPException(409, "sandbox lifecycle parent is not configured")
-        return SandboxLifecycle(parent)
+        parent_path = Path(parent).resolve()
+        manager = getattr(app.state, "sandbox_jobs", None)
+        if manager is None or manager.lifecycle.parent != parent_path:
+            manager = SandboxJobManager(SandboxLifecycle(parent_path), svc.store)
+            app.state.sandbox_jobs = manager
+        return manager
+
+    def sandbox_lifecycle():
+        return sandbox_jobs().lifecycle
 
     def bound_sandbox_root(sandbox_id: str | None) -> tuple[str, Path]:
         """Resolve the persisted sandbox identity; writes never fall back to the live checkout."""
@@ -196,8 +233,27 @@ def create_app(svc: services.Services | None = None) -> FastAPI:
 
     @app.get("/health")
     def health():
+        durable = svc.store.backend == "postgres"
         return {"status": "ok", "provider": s.provider, "auth": "enabled" if s.api_token else "disabled",
-                "skills": len(svc.skills.skills)}
+                "skills": len(svc.skills.skills), "persistence": svc.store.backend,
+                "durable": durable, "warning": None if durable else "SQLite storage is ephemeral"}
+
+    @app.get("/v1/docs", dependencies=[Depends(auth)])
+    def docs_list():
+        return {"documents": _documents(), "faq": FAQ}
+
+    @app.get("/v1/docs/{doc_id:path}", dependencies=[Depends(auth)])
+    def docs_get(doc_id: str):
+        requested = unquote(doc_id).replace("\\", "/").lstrip("/")
+        root = DOC_ROOT.resolve()
+        target = (root / requested).resolve()
+        if target.suffix.lower() != ".md" or not target.is_file() or not target.is_relative_to(root):
+            raise HTTPException(404, "document not found")
+        rel = target.relative_to(root).as_posix()
+        if rel not in {item["path"] for item in _documents()}:
+            raise HTTPException(404, "document not found")
+        return {"id": rel, "path": rel, "title": target.stem, "category": _doc_category(rel),
+                "content": target.read_text(encoding="utf-8")}
 
     @app.post("/v1/guard/agent/prepare", dependencies=[Depends(auth)])
     async def guard_agent_prepare(req: GuardAgentReq):
@@ -264,23 +320,39 @@ def create_app(svc: services.Services | None = None) -> FastAPI:
                            "exists": target.exists()}
         return {"repository": repository.__dict__, "files": files, "evidence_level": "local"}
 
-    @app.post("/v1/guard/sandboxes", dependencies=[Depends(auth)])
+    @app.post("/v1/guard/sandboxes", status_code=202, dependencies=[Depends(auth)])
     def guard_sandbox_provision(req: GuardSandboxReq):
         try:
-            manager = sandbox_lifecycle()
-            record = manager.provision(req.source or str(guard_root()), req.ttl_seconds)
-            return {"status": "PROVISIONED", "sandbox_id": record.sandbox_id,
-                    "root": str(record.root), "expires_at": record.expires_at,
-                    "source": record.source, "evidence_level": "local"}
+            job = sandbox_jobs().provision(req.source or str(guard_root()), req.ttl_seconds)
+            return job
         except (OSError, ValueError, RuntimeError) as exc:
             raise HTTPException(409, str(exc))
 
-    @app.delete("/v1/guard/sandboxes/{sandbox_id}", dependencies=[Depends(auth)])
+    @app.post("/v1/guard/sandboxes/cleanup", status_code=202, dependencies=[Depends(auth)])
+    def guard_sandbox_cleanup_expired():
+        try:
+            return sandbox_jobs().cleanup_expired()
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise HTTPException(409, str(exc))
+
+    @app.get("/v1/guard/sandboxes/jobs/{job_id}", dependencies=[Depends(auth)])
+    def guard_sandbox_job(job_id: str):
+        job = sandbox_jobs().get(job_id)
+        if not job:
+            raise HTTPException(404, "sandbox job not found")
+        return job
+
+    @app.delete("/v1/guard/sandboxes/jobs/{job_id}", status_code=202, dependencies=[Depends(auth)])
+    def guard_sandbox_job_cancel(job_id: str):
+        manager = sandbox_jobs()
+        if not manager.cancel(job_id):
+            raise HTTPException(409, "sandbox job is not cancellable")
+        return manager.get(job_id)
+
+    @app.delete("/v1/guard/sandboxes/{sandbox_id}", status_code=202, dependencies=[Depends(auth)])
     def guard_sandbox_cleanup(sandbox_id: str, force: bool = False):
         try:
-            removed = sandbox_lifecycle().cleanup(sandbox_id, force=force)
-            return {"status": "REMOVED" if removed else "NOT_REMOVED", "sandbox_id": sandbox_id,
-                    "evidence_level": "local"}
+            return sandbox_jobs().cleanup(sandbox_id, force=force)
         except (OSError, ValueError, RuntimeError) as exc:
             raise HTTPException(409, str(exc))
 
@@ -561,7 +633,7 @@ def create_app(svc: services.Services | None = None) -> FastAPI:
             raise HTTPException(404, "approval record not found")
         return record
 
-    @app.get("/", include_in_schema=False)
+    @app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
     def ui():
         return FileResponse(Path(__file__).parent / "static" / "index.html")
 

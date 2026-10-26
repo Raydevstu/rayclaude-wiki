@@ -402,7 +402,7 @@ def test_mcp_kb_tools_and_cli(settings, tmp_path):
 
 def test_cli_kb_roundtrip(tmp_path):
     import os, subprocess, sys
-    env = {"PATH": os.environ["PATH"], "TIER1_DB": str(tmp_path / "k.db"), "TIER1_SKILLS_DIR": "skills", "TIER1_PROVIDER": "mock",
+    env = {**os.environ, "TIER1_DB": str(tmp_path / "k.db"), "TIER1_SKILLS_DIR": "skills", "TIER1_PROVIDER": "mock",
            "TIER1_SANDBOX_DIR": str(tmp_path / "sb")}
     def cli(*a):
         p = subprocess.run([sys.executable, "-m", "tier1", *a], capture_output=True, text=True, timeout=60, env=env)

@@ -19,8 +19,18 @@ CREATE TABLE IF NOT EXISTS jobs(name TEXT PRIMARY KEY, kind TEXT, spec TEXT, pro
 CREATE TABLE IF NOT EXISTS approval_records(id TEXT PRIMARY KEY, ts REAL, status TEXT, body TEXT);
 CREATE TABLE IF NOT EXISTS guard_write_audits(id TEXT PRIMARY KEY, approval_id TEXT, ts REAL,
   action TEXT, status TEXT, body TEXT);
+CREATE TABLE IF NOT EXISTS sandbox_jobs(id TEXT PRIMARY KEY, ts REAL, status TEXT, body TEXT);
 """
 GENESIS = "0" * 64
+
+
+def build_store(database_url: str, sqlite_path: str) -> "Store":
+    if database_url:
+        if not database_url.startswith(("postgres://", "postgresql://")):
+            raise ValueError("TIER1_DATABASE_URL must be a PostgreSQL connection URL")
+        from .postgres_store import PostgresStore
+        return PostgresStore(database_url)
+    return Store(sqlite_path)
 
 
 def _today() -> str:
@@ -28,6 +38,8 @@ def _today() -> str:
 
 
 class Store:
+    backend = "sqlite"
+
     def __init__(self, path: str):
         if path != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -190,6 +202,20 @@ class Store:
         for row in rows:
             row["body"] = json.loads(row["body"])
         return rows
+
+    # ---- durable sandbox lifecycle jobs
+    def sandbox_job_put(self, job_id: str, status: str, body: dict):
+        self.x("INSERT OR REPLACE INTO sandbox_jobs(id,ts,status,body) VALUES(?,?,?,?)",
+               (job_id, time.time(), status, json.dumps(body, default=str)))
+
+    def sandbox_jobs_list(self):
+        rows = self.q("SELECT body FROM sandbox_jobs ORDER BY ts")
+        return [json.loads(row["body"]) for row in rows]
+
+    def sandbox_jobs_prune(self, keep: int = 500):
+        keep = max(1, int(keep))
+        self.x("DELETE FROM sandbox_jobs WHERE id NOT IN "
+               "(SELECT id FROM sandbox_jobs ORDER BY ts DESC, id DESC LIMIT ?)", (keep,))
 
     # ---- jobs
     def job_put(self, name, kind, spec, prompt, enabled=True):
